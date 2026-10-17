@@ -233,6 +233,12 @@ class TrayApp(QWidget):
 
 
 def main() -> None:
+    from combined_tray import both_installed, run_combined_host  # noqa: E402
+
+    if both_installed():
+        run_combined_host()
+        return
+
     lock = os.path.join(CONFIG_DIR, "tray.lock")
     _ensure_config()
     try:
@@ -243,7 +249,7 @@ def main() -> None:
         try:
             old = int(open(lock, encoding="utf-8").read().strip())
             os.kill(old, 0)
-            print("mmx200-battery-tray läuft bereits", file=sys.stderr)
+            print("mmx200-battery-tray already running", file=sys.stderr)
             sys.exit(0)
         except (OSError, ValueError):
             os.remove(lock)

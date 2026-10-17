@@ -27,6 +27,7 @@ Bluetooth. Vollständig KI-generiert (Cursor Agent), Feedback durch Morida.
 - Discharge estimate (~40 h runtime), calibrate via voice prompt / menu / BT
 - CLI: `mmx200-battery-status`
 - systemd user service + autostart `.desktop`
+- **Combined tray:** if [`8bitdo-2c-battery-tray`](https://github.com/MoridaDE/8bitdo-2c-battery-tray) is also installed, this service hosts **one** StatusNotifier icon for both devices (repos stay separate)
 
 ## Requirements
 
@@ -89,12 +90,18 @@ More detail: [`docs/JOURNAL.md`](docs/JOURNAL.md).
 ## Layout
 
 ```
-src/backend.py   # HID listener, BlueZ, EstimateStore
-src/tray.py      # PyQt6 StatusNotifierItem
-src/status.py    # JSON CLI
-packaging/       # udev, systemd --user, .desktop
+src/backend.py        # HID listener, BlueZ, EstimateStore
+src/tray.py           # PyQt6 StatusNotifierItem (solo or hosts combined)
+src/combined_tray.py  # Unified UI when both sister apps are installed
+src/status.py         # JSON CLI
+packaging/            # udev, systemd --user, .desktop
 install.sh
 ```
+
+## Sister project
+
+8BitDo Ultimate 2C: [`8bitdo-2c-battery-tray`](https://github.com/MoridaDE/8bitdo-2c-battery-tray).
+Install both → one combined tray icon (this unit hosts it; pad unit is disabled).
 
 ## License
 
