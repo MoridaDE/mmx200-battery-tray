@@ -1,39 +1,46 @@
 # MMX 200 Battery Tray (Linux / KDE)
 
-Plasma-/StatusNotifier-Tray für das **Beyerdynamic MMX 200 wireless** über den
-**LL-USB-Dongle** (`2e50:002f`): Verbindungsstatus (Funk-Link) und kalibrierbare
-Akku-Schätzung. Live-Prozent nur über Bluetooth GATT (wie die offizielle
-beyerdynamic-App).
+StatusNotifier / Plasma tray for the **Beyerdynamic MMX 200 wireless** over the
+**LL USB dongle** (`2e50:002f`): RF link state plus a calibratable battery
+estimate. **Live percentage only via Bluetooth GATT** (same path as the official
+beyerdynamic app).
 
-> ## 100 % KI-generiert
+> ## 100% AI-generated
 >
-> **Entwicklung, Implementierung, Protokollanalyse und diese Dokumentation wurden
-> vollständig von einer KI (Cursor Agent) erstellt.** Es gab keinen manuellen
-> Anwendungscode von Menschenhand — nur Anforderungen, Tests und Feedback durch
-> Morida. Bitte entsprechend einordnen (Review, Security, Support).
+> **Development, implementation, protocol analysis, and this documentation were
+> created entirely by an AI (Cursor Agent).** There is no hand-written application
+> code — only requirements, testing, and feedback by **Morida**. Please treat the
+> project accordingly (review, security, support).
+
+<details>
+<summary>Deutsch (Kurzfassung)</summary>
+
+Tray für MMX 200 über LL-Dongle: HID-Link + Akku-Schätzung; Live-% nur per
+Bluetooth. Vollständig KI-generiert (Cursor Agent), Feedback durch Morida.
+</details>
 
 ## Features
 
-- Tray-Icon (Freedesktop-Battery-Theme, Fallback gezeichnet)
-- **HID-Link** über Interrupt-Report `0x55` (Byte 2: `0x00` = verbunden, `0x01` = getrennt; verifiziert per usbmon)
-- **Bluetooth GATT** (`org.bluez.Battery1`) für echten Akkustand
-- Schätzung mit Entladekurve (~40 h), kalibrierbar per Ansage / Menü / BT
+- Tray icon (Freedesktop battery theme, painted fallback)
+- **HID link** via interrupt report `0x55` (byte 2: `0x00` = linked, `0x01` = unlinked; verified with usbmon)
+- **Bluetooth GATT** (`org.bluez.Battery1`) for real battery %
+- Discharge estimate (~40 h runtime), calibrate via voice prompt / menu / BT
 - CLI: `mmx200-battery-status`
-- systemd-user-Service + Autostart-Desktop-Datei
+- systemd user service + autostart `.desktop`
 
-## Voraussetzungen
+## Requirements
 
-- Linux mit PipeWire/Pulse optional (nicht nötig für HID-Link)
+- Linux (PipeWire/Pulse optional; not required for HID link)
 - Python 3.11+, PyQt6, dbus-python
-- KDE Plasma / StatusNotifier-Host (andere Desktops mit SNI möglich)
-- udev `uaccess` für hidraw (siehe `packaging/`)
+- KDE Plasma / any StatusNotifier host
+- udev `uaccess` for hidraw (see `packaging/`)
 
 ## Installation
 
 ```bash
-git clone <dieses-repo>
+git clone https://github.com/MoridaDE/mmx200-battery-tray.git
 cd mmx200-battery-tray
-pip install --user -r requirements.txt   # oder Distro-Pakete: python-pyqt6, python-dbus
+pip install --user -r requirements.txt   # or distro packages: python-pyqt6, python-dbus
 ./install.sh
 sudo cp packaging/71-mmx200-hidraw.rules /etc/udev/rules.d/
 sudo udevadm control --reload && sudo udevadm trigger
@@ -44,56 +51,56 @@ mmx200-battery-status
 systemctl --user status mmx200-battery-tray.service
 ```
 
-Konfiguration: `~/.config/mmx200-battery/` (`estimate`, `link`, `last_bt`, `state.json`).
+Config: `~/.config/mmx200-battery/` (`estimate`, `link`, `last_bt`, `state.json`).
 
-## Nutzung
+## Usage
 
-| Situation | Anzeige |
+| Situation | Display |
 |---|---|
-| Dongle + Headset an (HID) | verbunden + `~`Schätzung |
-| Kurz per Bluetooth gekoppelt | Live-% (GATT), kalibriert Schätzung |
-| Headset aus | HID: getrennt |
-| Rechtsklick → Ansage kalibrieren | setzt Schätzung nach Sprachansage |
+| Dongle + headset on (HID) | connected + `~`estimate |
+| Briefly paired over Bluetooth | live % (GATT), calibrates estimate |
+| Headset off | HID: disconnected |
+| Right-click → calibrate from announcement | sets estimate from voice prompt |
 
-**Wichtig:** Der 2,4‑GHz-Dongle liefert **keinen** Live-Akku-%. Das ist das gleiche
-Ergebnis wie bei der MMX‑150-Forschung und dem Verhalten der beyerdynamic-App
-(Akku über Bluetooth).
+**Important:** The 2.4 GHz dongle does **not** expose a live battery %. That matches
+MMX 150 research and the beyerdynamic app (battery over Bluetooth).
 
-## Protokoll-Journal (Entwicklung)
+## Development journal (protocol)
 
-Chronologischer Auszug der Analyse auf echter Hardware (CachyOS / Kernel 7.x,
-Dongle Bus 3):
+Hardware notes (CachyOS / kernel 7.x, dongle on bus 3):
 
-1. **Ziel:** Akkustand und Link im Linux-Tray, ohne Windows-Tool.
-2. **HID-Scan:** Feature `0x55` / `GET_FEATURE` oft Junk (`0x80bb` / später `0x3d ff 01…`).
-3. **usbmon** (Text-Capture `/sys/kernel/debug/usb/usbmon/3u`) während Power-Toggle:
-   - Interrupt IN Report `0x55`, Payload mit ASCII `"MMX 200 wireless"`.
-   - Byte 2: **`0x00` = RF up / `0x01` = RF down** (anfangs falsch herum interpretiert, live korrigiert).
-   - Byte 3 (`0x48`) ist **kein** Akku (kurz fälschlich als 72 % gelesen).
-4. **Mic-Proxy** (digitale Stille) als Fallback verworfen — PipeWire hält das Gerät belegt, False-Positives.
-5. **Persistenz:** Letzter HID-Link in `link`; nach Restart einmal toggle oder Taste nötig, wenn noch kein Event.
-6. **Akku über Dongle:** Feature-Sweep 0x00–0xFF, Vendor-Kommandos auf `0x55`/`0x3d` — kein Live-%.
-7. **Bluetooth:** Gerät `MMX 200 wireless`, `Battery1.Percentage` (z. B. 60 %) → kalibriert `estimate`.
-8. **Abspaltung:** Aus einem kombinierten „device-battery“-Tray als eigenes Repo extrahiert.
+1. **Goal:** Battery + link in a Linux tray without Windows tools.
+2. **HID scan:** Feature `0x55` / `GET_FEATURE` often junk (`0x80bb` / later `0x3d ff 01…`).
+3. **usbmon** text capture during power toggle:
+   - Interrupt IN report `0x55`, payload contains ASCII `"MMX 200 wireless"`.
+   - Byte 2: **`0x00` = RF up / `0x01` = RF down** (initially inverted, corrected live).
+   - Byte 3 (`0x48`) is **not** battery (briefly misread as 72%).
+4. **Mic silence proxy** abandoned — PipeWire holds the device; false positives.
+5. **Persistence:** last HID link in `link`; after restart, one power toggle or button may be needed.
+6. **Battery over dongle:** feature sweep + vendor commands on `0x55`/`0x3d` — no live %.
+7. **Bluetooth:** device `MMX 200 wireless`, `Battery1.Percentage` → calibrates `estimate`.
+8. **Split:** extracted from a combined “device-battery” tray into this repo.
 
-Verwandte Arbeit (MMX 150, anderer PID): Dongle-Report `0x3a` nur Link, kein Akku —
-siehe öffentliche Analyse von `mmx-battery` GNOME-Extension (3dns).
+Related (MMX 150, different PID): dongle report `0x3a` is link-only — see the public
+`mmx-battery` GNOME extension analysis (3dns).
 
-## Architektur
+More detail: [`docs/JOURNAL.md`](docs/JOURNAL.md).
+
+## Layout
 
 ```
-src/backend.py   # HID-Listener, BlueZ, EstimateStore
+src/backend.py   # HID listener, BlueZ, EstimateStore
 src/tray.py      # PyQt6 StatusNotifierItem
-src/status.py    # JSON-CLI
+src/status.py    # JSON CLI
 packaging/       # udev, systemd --user, .desktop
 install.sh
 ```
 
-## Lizenz
+## License
 
-MIT — siehe `LICENSE`.
+MIT — see `LICENSE`.
 
-## Haftungsausschluss
+## Disclaimer
 
-Keine offizielle beyerdynamic-Software. HID/Bluetooth-Verhalten kann sich mit
-Firmware ändern. Nutzung auf eigene Gefahr.
+Not official beyerdynamic software. HID/Bluetooth behaviour may change with
+firmware. Use at your own risk.

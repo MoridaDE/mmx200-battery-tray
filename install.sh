@@ -26,10 +26,10 @@ install -m 0644 "$ROOT/packaging/mmx200-battery-tray.service" "$UNIT_DIR/"
 install -m 0644 "$ROOT/packaging/mmx200-battery-tray.desktop" "$AUTO_DIR/"
 install -m 0644 "$ROOT/packaging/mmx200-battery-tray.desktop" "$APP_DIR/"
 
-echo "Optional: udev-Regel (einmalig mit sudo):"
+echo "Optional udev rule (once, with sudo):"
 echo "  sudo cp $ROOT/packaging/71-mmx200-hidraw.rules /etc/udev/rules.d/"
 echo "  sudo udevadm control --reload && sudo udevadm trigger"
 
 systemctl --user daemon-reload
 systemctl --user enable --now mmx200-battery-tray.service
-echo "Installiert. Status: mmx200-battery-status"
+echo "Installed. Check status with: mmx200-battery-status"

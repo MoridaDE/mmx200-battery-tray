@@ -1,41 +1,42 @@
-# Entwicklungsjournal — MMX 200 Battery Tray
+# Development journal — MMX 200 Battery Tray
 
-Ausführlicheres Log der KI-gestützten Entwicklung (Cursor Agent, 2026-10).
+Extended log of the AI-assisted development (Cursor Agent, 2026-10).
 
-## Kontext
+## Context
 
-Anforderung von Morida: Unter Linux (KDE) Akkustand und Verbindungsstatus für das
-Beyerdynamic MMX 200 (LL-Dongle, nicht Bluetooth-Headset-Alltag) sichtbar machen.
+Request from **Morida**: show battery level and connection state for the
+Beyerdynamic MMX 200 on Linux (KDE) via the LL dongle (not day-to-day Bluetooth
+headset use).
 
-## Meilensteine
+## Milestones
 
-| Phase | Ergebnis |
+| Phase | Result |
 |---|---|
-| Erste Tray-App (kombiniert mit 8BitDo) | PyQt6 SNI, systemd --user |
-| HID Feature 0x55 | Unzuverlässig / Junk |
-| usbmon Toggle-Capture | Report 0x55 Link-Byte gefunden |
-| Byte-2-Polarität | Korrigiert: 0x00=an, 0x01=aus |
-| Mic-Silence-Proxy | Verworfen (PipeWire/EBUSY) |
-| Persistenter Link | `~/.config/.../link` |
-| Akku über Dongle | Negativ (Sweep + Vendor-Cmds) |
-| Bluetooth GATT | Positiv (echter %) |
-| Repo-Split | Eigenständiges Projekt |
+| First tray app (combined with 8BitDo) | PyQt6 SNI, systemd --user |
+| HID feature 0x55 | Unreliable / junk |
+| usbmon toggle capture | Report 0x55 link byte found |
+| Byte-2 polarity | Fixed: `0x00`=on, `0x01`=off |
+| Mic silence proxy | Abandoned (PipeWire/EBUSY) |
+| Persistent link | `~/.config/.../link` |
+| Battery over dongle | Negative (sweep + vendor cmds) |
+| Bluetooth GATT | Positive (real %) |
+| Repo split | Standalone project |
 
-## usbmon (Kurzform)
+## usbmon (short)
 
-Adresse Dongle z. B. `3:003`. Interrupt IN:
+Dongle address e.g. `3:003`. Interrupt IN:
 
 ```
-55 6b 00 48 … "MMX 200 wireless"   → verbunden
-55 6b 01 48 … "MMX 200 wireless"   → getrennt
+55 6b 00 48 … "MMX 200 wireless"   → linked
+55 6b 01 48 … "MMX 200 wireless"   → unlinked
 ```
 
-## Bekannte Limits
+## Known limits
 
-- Kein Dongle-Akku-%
-- Ohne erstes HID-Event nach Start: „einmal aus/ein“
-- Schätzung driftet; BT oder Ansage neu kalibrieren
+- No dongle battery %
+- Without a first HID event after start: power-cycle once
+- Estimate drifts; re-calibrate via BT or voice announcement
 
-## KI-Hinweis
+## AI notice
 
-Gesamte Codebasis und Docs: **100 % KI-generiert** (siehe README).
+Entire codebase and docs: **100% AI-generated** (see README).
