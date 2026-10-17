@@ -70,7 +70,8 @@ MMX 150 research and the beyerdynamic app (battery over Bluetooth).
 
 Hardware notes (CachyOS / kernel 7.x, dongle on bus 3):
 
-1. **Goal:** Battery + link in a Linux tray without Windows tools.
+1. **Goal:** Battery + link in a Linux tray. There is no stock Windows / macOS tray
+   indicator for this headset either (beyerdynamic app uses Bluetooth for %).
 2. **HID scan:** Feature `0x55` / `GET_FEATURE` often junk (`0x80bb` / later `0x3d ff 01…`).
 3. **usbmon** text capture during power toggle:
    - Interrupt IN report `0x55`, payload contains ASCII `"MMX 200 wireless"`.
