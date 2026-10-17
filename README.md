@@ -28,6 +28,7 @@ Bluetooth. Vollständig KI-generiert (Cursor Agent), Feedback durch Morida.
 - CLI: `mmx200-battery-status`
 - systemd user service + autostart `.desktop`
 - **Combined tray:** if [`8bitdo-2c-battery-tray`](https://github.com/MoridaDE/8bitdo-2c-battery-tray) is also installed, this service hosts **one** StatusNotifier icon for both devices (repos stay separate)
+- **Open goal:** live % over the LL dongle (not solved yet — see [Open goal / contributing](#open-goal--contributing))
 
 ## Requirements
 
