@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=MMX 200 Battery
+Comment=Tray indicator for Beyerdynamic MMX 200
+Exec=mmx200-battery-tray
+Icon=battery
+Terminal=false
+Categories=Utility;
+X-GNOME-Autostart-enabled=true

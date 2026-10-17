@@ -1,0 +1,14 @@
+[Unit]
+Description=MMX 200 Battery Tray
+After=graphical-session.target plasma-plasmashell.service
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/.local/share/mmx200-battery-tray/tray.py
+Restart=on-failure
+RestartSec=3
+Environment=QT_QPA_PLATFORM=wayland
+
+[Install]
+WantedBy=graphical-session.target

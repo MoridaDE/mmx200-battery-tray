@@ -1,0 +1,4 @@
+# Beyerdynamic MMX 200 LL Adapter — userspace HID access for battery tray
+KERNEL=="hidraw*", ATTRS{idVendor}=="2e50", ATTRS{idProduct}=="002f", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="input", ATTRS{idVendor}=="2e50", ATTRS{idProduct}=="002f", MODE="0660", TAG+="uaccess"
+KERNEL=="event*", ATTRS{idVendor}=="2e50", ATTRS{idProduct}=="002f", MODE="0660", TAG+="uaccess"
