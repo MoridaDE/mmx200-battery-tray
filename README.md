@@ -10,7 +10,7 @@ beyerdynamic-App).
 > **Entwicklung, Implementierung, Protokollanalyse und diese Dokumentation wurden
 > vollständig von einer KI (Cursor Agent) erstellt.** Es gab keinen manuellen
 > Anwendungscode von Menschenhand — nur Anforderungen, Tests und Feedback durch
-> den Nutzer (Niels). Bitte entsprechend einordnen (Review, Security, Support).
+> Morida. Bitte entsprechend einordnen (Review, Security, Support).
 
 ## Features
 

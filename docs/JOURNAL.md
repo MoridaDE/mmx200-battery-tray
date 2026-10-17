@@ -4,7 +4,7 @@ Ausführlicheres Log der KI-gestützten Entwicklung (Cursor Agent, 2026-10).
 
 ## Kontext
 
-Nutzerwunsch: Unter Linux (KDE) Akkustand und Verbindungsstatus für das
+Anforderung von Morida: Unter Linux (KDE) Akkustand und Verbindungsstatus für das
 Beyerdynamic MMX 200 (LL-Dongle, nicht Bluetooth-Headset-Alltag) sichtbar machen.
 
 ## Meilensteine
