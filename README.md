@@ -66,6 +66,17 @@ Config: `~/.config/mmx200-battery/` (`estimate`, `link`, `last_bt`, `state.json`
 **Important:** The 2.4 GHz dongle does **not** expose a live battery %. That matches
 MMX 150 research and the beyerdynamic app (battery over Bluetooth).
 
+## Open goal / contributing
+
+The real goal is to read the battery **live and directly from the manufacturer
+dongle** (2.4 GHz path), without needing Bluetooth. No working method has been
+found yet, so this project uses a Bluetooth GATT workaround (plus a local
+estimate when only the dongle is connected).
+
+If you find a way to query capacity over the LL dongle / HID interface, please
+open an issue or pull request — contributions that replace or improve on the
+Bluetooth detour are very welcome.
+
 ## Development journal (protocol)
 
 Hardware notes (CachyOS / kernel 7.x, dongle on bus 3):
