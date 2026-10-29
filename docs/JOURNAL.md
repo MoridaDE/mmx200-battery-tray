@@ -35,7 +35,13 @@ Dongle address e.g. `3:003`. Interrupt IN:
 
 - No dongle battery %
 - Without a first HID event after start: power-cycle once
-- Estimate drifts; re-calibrate via BT or voice announcement
+- Estimate drifts between BT syncs; re-calibrate via BT or voice announcement
+- Runtime learning needs meaningful discharge between syncs (≥3 % / ≥~20 min connected)
+
+## v1.1.0 (2026-10-29)
+
+Self-learning discharge hours from BT anchors using connected `drain_accum`
+(not wall clock). See `CHANGELOG.md`.
 
 ## AI notice
 

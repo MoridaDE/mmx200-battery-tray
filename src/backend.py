@@ -75,6 +75,12 @@ class Mmx200Backend:
     REPORT_BUTTON = 0x07
     LINK_PATH = os.path.expanduser("~/.config/mmx200-battery/link")
     LAST_BT_PATH = os.path.expanduser("~/.config/mmx200-battery/last_bt")
+    ESTIMATE_PATH = os.path.expanduser("~/.config/mmx200-battery/estimate")
+    DRAIN_HOURS_PATH = os.path.expanduser("~/.config/mmx200-battery/drain_hours")
+    DRAIN_SAMPLES_PATH = os.path.expanduser("~/.config/mmx200-battery/drain_samples.json")
+    # Spec default ~40 h; learned values stay inside these bounds
+    DRAIN_HOURS_DEFAULT = 40.0
+    DRAIN_HOURS_BOUNDS = (15.0, 70.0)
 
     def __init__(self) -> None:
         self._last_button = 0.0
@@ -237,19 +243,34 @@ class Mmx200Backend:
             self._stop.wait(0.3)
 
     def _save_last_bt(self, pct: int) -> None:
+        """Commit a real BT/% calibration anchor; may learn drain_hours from prior use."""
+        prev = self._load_last_bt()
+        now = time.time()
+        # Debounce identical GATT polls while BT stays linked
+        if prev is not None and abs(prev[0] - pct) < 1 and (now - prev[1]) < 600:
+            return
+        learn_drain_from_bt_anchor(
+            estimate_path=self.ESTIMATE_PATH,
+            drain_hours_path=self.DRAIN_HOURS_PATH,
+            samples_path=self.DRAIN_SAMPLES_PATH,
+            prev=prev,
+            new_pct=pct,
+            default_hours=self.DRAIN_HOURS_DEFAULT,
+            bounds=self.DRAIN_HOURS_BOUNDS,
+        )
         try:
             os.makedirs(os.path.dirname(self.LAST_BT_PATH), exist_ok=True)
             with open(self.LAST_BT_PATH, "w", encoding="utf-8") as fh:
-                fh.write(f"{pct} {time.time():.3f}\n")
-            est = os.path.expanduser("~/.config/mmx200-battery/estimate")
-            with open(est, "w", encoding="utf-8") as fh:
-                fh.write(f"{float(pct):.4f} {time.time():.3f}\n")
+                fh.write(f"{pct} {now:.3f}\n")
+            with open(self.ESTIMATE_PATH, "w", encoding="utf-8") as fh:
+                # pct ts drain_accum_s — accum resets after a fresh BT anchor
+                fh.write(f"{float(pct):.4f} {now:.3f} 0.000\n")
         except OSError:
             pass
 
     def _load_last_bt(self) -> Optional[tuple[int, float]]:
         try:
-            pct_s, ts_s = open(self.LAST_BT_PATH, encoding="utf-8").read().split()
+            pct_s, ts_s = open(self.LAST_BT_PATH, encoding="utf-8").read().split()[:2]
             pct = int(float(pct_s))
             if 1 <= pct <= 100:
                 return pct, float(ts_s)
@@ -354,11 +375,98 @@ class Mmx200Backend:
         )
 
 
+def _read_drain_accum(estimate_path: str) -> float:
+    try:
+        data = open(estimate_path, encoding="utf-8").read().strip().split()
+        if len(data) >= 3:
+            return max(0.0, float(data[2]))
+    except (OSError, ValueError, IndexError):
+        pass
+    return 0.0
+
+
+def load_drain_hours(path: str, default: float, bounds: tuple[float, float]) -> float:
+    lo, hi = bounds
+    try:
+        h = float(open(path, encoding="utf-8").read().split()[0])
+        if lo <= h <= hi:
+            return h
+    except (OSError, ValueError, IndexError):
+        pass
+    return default
+
+
+def learn_drain_from_bt_anchor(
+    *,
+    estimate_path: str,
+    drain_hours_path: str,
+    samples_path: str,
+    prev: Optional[tuple[int, float]],
+    new_pct: int,
+    default_hours: float,
+    bounds: tuple[float, float],
+    min_drop_pct: float = 3.0,
+    min_drain_hours: float = 0.35,
+    ema_alpha: float = 0.35,
+) -> Optional[float]:
+    """Update full→empty hours from connected drain time between two BT anchors.
+
+    Uses only seconds the estimate was *draining* (dongle linked / in use), not
+    wall-clock idle time. Returns the new hours value when a sample was applied.
+    """
+    if prev is None:
+        return None
+    prev_pct, _prev_ts = prev
+    drop = float(prev_pct - new_pct)
+    if drop < min_drop_pct:
+        return None
+    accum_s = _read_drain_accum(estimate_path)
+    hours_used = accum_s / 3600.0
+    if hours_used < min_drain_hours:
+        return None
+    implied = 100.0 * hours_used / drop
+    lo, hi = bounds
+    if not (lo <= implied <= hi):
+        return None
+    current = load_drain_hours(drain_hours_path, default_hours, bounds)
+    learned = (1.0 - ema_alpha) * current + ema_alpha * implied
+    learned = max(lo, min(hi, learned))
+    try:
+        os.makedirs(os.path.dirname(drain_hours_path) or ".", exist_ok=True)
+        with open(drain_hours_path, "w", encoding="utf-8") as fh:
+            fh.write(f"{learned:.4f} {time.time():.3f} implied={implied:.2f} {prev_pct}->{new_pct}\n")
+        import json
+
+        hist: list[dict] = []
+        if os.path.exists(samples_path):
+            try:
+                hist = json.loads(open(samples_path, encoding="utf-8").read())
+            except (OSError, json.JSONDecodeError, TypeError):
+                hist = []
+        hist.append(
+            {
+                "ts": time.time(),
+                "prev_pct": prev_pct,
+                "new_pct": new_pct,
+                "drop": drop,
+                "drain_hours_used": round(hours_used, 4),
+                "implied_full_hours": round(implied, 3),
+                "learned_full_hours": round(learned, 3),
+            }
+        )
+        with open(samples_path, "w", encoding="utf-8") as fh:
+            json.dump(hist[-40:], fh, indent=2)
+    except OSError:
+        return learned
+    return learned
+
+
 class EstimateStore:
     """Persisted coulomb-counter estimate when hardware % is unavailable.
 
-    drain_hours: empty→full discharge runtime
+    drain_hours: empty→full discharge runtime (default or learned from BT anchors)
     charge_hours: empty→full charge time (USB), optional
+    File format: ``percentage timestamp [drain_accum_seconds]``
     """
 
     def __init__(
@@ -366,12 +474,22 @@ class EstimateStore:
         path: str,
         drain_hours: float,
         charge_hours: Optional[float] = None,
+        drain_hours_path: Optional[str] = None,
+        drain_bounds: tuple[float, float] = (10.0, 80.0),
     ) -> None:
         self.path = path
-        self.full_hours = drain_hours
+        self.default_hours = drain_hours
+        self.drain_hours_path = drain_hours_path
+        self.drain_bounds = drain_bounds
+        self.full_hours = (
+            load_drain_hours(drain_hours_path, drain_hours, drain_bounds)
+            if drain_hours_path
+            else drain_hours
+        )
         self.charge_hours = charge_hours if charge_hours and charge_hours > 0 else None
         self.percentage = 70.0
         self.last_ts = time.time()
+        self.drain_accum_s = 0.0
         self._load()
 
     def _load(self) -> None:
@@ -381,13 +499,23 @@ class EstimateStore:
             data = open(self.path, encoding="utf-8").read().strip().split()
             self.percentage = float(data[0])
             self.last_ts = float(data[1])
+            if len(data) >= 3:
+                self.drain_accum_s = max(0.0, float(data[2]))
         except (OSError, ValueError, IndexError):
             pass
 
+    def reload_drain_hours(self) -> None:
+        if self.drain_hours_path:
+            self.full_hours = load_drain_hours(
+                self.drain_hours_path, self.default_hours, self.drain_bounds
+            )
+
     def save(self) -> None:
-        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
         with open(self.path, "w", encoding="utf-8") as fh:
-            fh.write(f"{self.percentage:.4f} {time.time():.3f}\n")
+            fh.write(
+                f"{self.percentage:.4f} {time.time():.3f} {self.drain_accum_s:.3f}\n"
+            )
 
     def set_percentage(self, pct: int) -> None:
         self.percentage = max(0.0, min(100.0, float(pct)))
@@ -396,17 +524,21 @@ class EstimateStore:
 
     def sync_from_disk(self) -> None:
         """Pick up calibrations written by backends (BT GATT) without restart."""
+        self.reload_drain_hours()
         if not os.path.exists(self.path):
             return
         try:
             data = open(self.path, encoding="utf-8").read().strip().split()
             file_pct = float(data[0])
             file_ts = float(data[1])
+            file_accum = float(data[2]) if len(data) >= 3 else None
         except (OSError, ValueError, IndexError):
             return
         if file_ts > self.last_ts + 0.05:
             self.percentage = max(0.0, min(100.0, file_pct))
             self.last_ts = file_ts
+            if file_accum is not None:
+                self.drain_accum_s = max(0.0, file_accum)
 
     def tick(self, draining: bool = False, charging: bool = False) -> int:
         now = time.time()
@@ -418,6 +550,7 @@ class EstimateStore:
                 self.percentage + (dt / 3600.0) * (100.0 / self.charge_hours),
             )
         elif draining and self.full_hours > 0:
+            self.drain_accum_s += dt
             self.percentage = max(
                 0.0, self.percentage - (dt / 3600.0) * (100.0 / self.full_hours)
             )

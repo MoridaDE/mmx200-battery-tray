@@ -103,7 +103,12 @@ class TrayApp(QWidget):
         super().__init__()
         self.state = _load_state()
         self.mmx = Mmx200Backend()
-        self.est = EstimateStore(os.path.join(CONFIG_DIR, "estimate"), MMX_FULL_HOURS)
+        self.est = EstimateStore(
+            os.path.join(CONFIG_DIR, "estimate"),
+            MMX_FULL_HOURS,
+            drain_hours_path=os.path.join(CONFIG_DIR, "drain_hours"),
+            drain_bounds=(15.0, 70.0),
+        )
         self._warned = False
 
         if not QSystemTrayIcon.isSystemTrayAvailable():
@@ -212,10 +217,14 @@ class TrayApp(QWidget):
         self.status.setText(text)
         show = pct if hw.connected else None
         self.tray.setIcon(_battery_icon(show, bool(hw.connected and pct is not None)))
+        hours = self.est.full_hours
+        learned = os.path.exists(os.path.join(CONFIG_DIR, "drain_hours"))
+        curve = f"Entladekurve ~{hours:.0f} h" + (" (gelernt)" if learned else " (Standard)")
         self.tray.setToolTip(
             text
+            + f"\n{curve}"
             + "\n\n~ = Schätzung\nLive-% nur per Bluetooth (wie beyerdynamic-App)\n"
-            "Link-Status über LL-Dongle HID"
+            "BT-Syncs lernen die Laufzeit aus der verbundenen Nutzungszeit nach"
         )
 
         level = int(self.state.get("notify_level", 20))

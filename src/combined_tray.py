@@ -99,7 +99,12 @@ class CombinedTrayApp(QWidget):
         self.pad = pad_mod.EightBitDo2CBackend()
         mmx_cfg = os.path.expanduser("~/.config/mmx200-battery")
         pad_cfg = os.path.expanduser("~/.config/8bitdo-2c-battery")
-        self.mmx_est = mmx_mod.EstimateStore(os.path.join(mmx_cfg, "estimate"), MMX_FULL_HOURS)
+        self.mmx_est = mmx_mod.EstimateStore(
+            os.path.join(mmx_cfg, "estimate"),
+            MMX_FULL_HOURS,
+            drain_hours_path=os.path.join(mmx_cfg, "drain_hours"),
+            drain_bounds=(15.0, 70.0),
+        )
         ch = PAD_CHARGE_HOURS
         try:
             ch = float(open(os.path.join(pad_cfg, "charge_hours"), encoding="utf-8").read().split()[0])
@@ -108,7 +113,11 @@ class CombinedTrayApp(QWidget):
         except (OSError, ValueError, IndexError):
             pass
         self.pad_est = pad_mod.EstimateStore(
-            os.path.join(pad_cfg, "estimate"), PAD_FULL_HOURS, charge_hours=ch
+            os.path.join(pad_cfg, "estimate"),
+            PAD_FULL_HOURS,
+            charge_hours=ch,
+            drain_hours_path=os.path.join(pad_cfg, "drain_hours"),
+            drain_bounds=(8.0, 35.0),
         )
         self._warned: set[str] = set()
         self._full_warned = False
@@ -266,13 +275,16 @@ class CombinedTrayApp(QWidget):
             candidates.append(pad_pct)
         show = min(candidates) if candidates else None
         self.tray.setIcon(_battery_icon(show, bool(candidates)))
+        mmx_h = self.mmx_est.full_hours
+        pad_h = self.pad_est.full_hours
         self.tray.setToolTip(
             "\n".join(
                 [
                     self.status_mmx.text(),
                     self.status_pad.text(),
                     "",
-                    "~ = estimate",
+                    f"MMX Entladekurve ~{mmx_h:.0f} h · Pad ~{pad_h:.0f} h",
+                    "~ = estimate (BT syncs learn runtime from connected use)",
                     "Combined UI (both trays installed)",
                 ]
             )

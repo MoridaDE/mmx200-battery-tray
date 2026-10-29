@@ -24,7 +24,9 @@ Bluetooth. Vollständig KI-generiert (Cursor Agent), Feedback durch Morida.
 - Tray icon (Freedesktop battery theme, painted fallback)
 - **HID link** via interrupt report `0x55` (byte 2: `0x00` = linked, `0x01` = unlinked; verified with usbmon)
 - **Bluetooth GATT** (`org.bluez.Battery1`) for real battery %
-- Discharge estimate (~40 h runtime), calibrate via voice prompt / menu / BT
+- Discharge estimate (~40 h default); **learns runtime** from BT sync pairs
+  (connected drain time + `%` drop → `drain_hours`)
+- Calibrate via voice prompt / menu / BT (each sync also resets the estimate)
 - CLI: `mmx200-battery-status`
 - systemd user service + autostart `.desktop`
 - **Combined tray:** if [`8bitdo-2c-battery-tray`](https://github.com/MoridaDE/8bitdo-2c-battery-tray) is also installed, this service hosts **one** StatusNotifier icon for both devices (repos stay separate)
@@ -53,14 +55,14 @@ mmx200-battery-status
 systemctl --user status mmx200-battery-tray.service
 ```
 
-Config: `~/.config/mmx200-battery/` (`estimate`, `link`, `last_bt`, `state.json`).
+Config: `~/.config/mmx200-battery/` (`estimate`, `link`, `last_bt`, `drain_hours`, `drain_samples.json`, `state.json`).
 
 ## Usage
 
 | Situation | Display |
 |---|---|
 | Dongle + headset on (HID) | connected + `~`estimate |
-| Briefly paired over Bluetooth | live % (GATT), calibrates estimate |
+| Briefly paired over Bluetooth | live % (GATT), resets estimate, may learn runtime |
 | Headset off | HID: disconnected |
 | Right-click → calibrate from announcement | sets estimate from voice prompt |
 
