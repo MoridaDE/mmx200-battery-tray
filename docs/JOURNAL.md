@@ -34,7 +34,7 @@ Dongle address e.g. `3:003`. Interrupt IN:
 ## Known limits
 
 - No dongle battery %
-- Without a first HID event after start: power-cycle once
+- HID link reports arrive only on power toggle. Until one arrives, the tray uses USB-mic silence (exact zeros = RF down) so a restart does not keep a stale “disconnected”.
 - Estimate drifts between BT syncs; re-calibrate via BT or voice announcement
 - Runtime learning needs meaningful discharge between syncs (≥3 % / ≥~20 min connected)
 

@@ -11,7 +11,7 @@ CONFIG = os.path.expanduser("~/.config/mmx200-battery")
 
 
 def main() -> None:
-    hw = Mmx200Backend().read()
+    hw = Mmx200Backend(watch=False).read()
     est = EstimateStore(os.path.join(CONFIG, "estimate"), 40.0)
     print(
         json.dumps(

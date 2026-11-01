@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixed / Added
+- Headset link no longer stays on a stale “disconnected” after restart.
+  Until a live HID toggle arrives, the tray reads the USB-mic noise floor
+  (silence = RF down).
+
 ## v1.1.0 — 2026-10-29
 
 ### Added

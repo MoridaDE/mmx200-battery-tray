@@ -92,7 +92,7 @@ Hardware notes (CachyOS / kernel 7.x, dongle on bus 3):
    - Byte 2: **`0x00` = RF up / `0x01` = RF down** (initially inverted, corrected live).
    - Byte 3 (`0x48`) is **not** battery (briefly misread as 72%).
 4. **Mic silence proxy** abandoned — PipeWire holds the device; false positives.
-5. **Persistence:** last HID link in `link`; after restart, one power toggle or button may be needed.
+5. **Persistence:** last HID link in `link`. Reports arrive only on power toggle; until one does, a USB-mic silence check recovers the current RF state after restart.
 6. **Battery over dongle:** feature sweep + vendor commands on `0x55`/`0x3d` — no live %.
 7. **Bluetooth:** device `MMX 200 wireless`, `Battery1.Percentage` → calibrates `estimate`.
 8. **Split:** extracted from a combined “device-battery” tray into this repo.

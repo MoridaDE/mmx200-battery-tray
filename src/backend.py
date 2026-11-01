@@ -7,6 +7,7 @@ import glob
 import os
 import select
 import struct
+import subprocess
 import threading
 import time
 from dataclasses import dataclass
@@ -82,13 +83,19 @@ class Mmx200Backend:
     DRAIN_HOURS_DEFAULT = 40.0
     DRAIN_HOURS_BOUNDS = (15.0, 70.0)
 
-    def __init__(self) -> None:
+    def __init__(self, watch: bool = True) -> None:
         self._last_button = 0.0
         self._hid_linked: Optional[bool] = None
         self._hid_ts = 0.0
+        self._hid_seen_live = False
+        self._link_via = ""
+        self._last_mic_probe = 0.0
+        self._mic_quiet = 0
         self._hid_lock = threading.Lock()
         self._stop = threading.Event()
         self._load_link()
+        if not watch:
+            return
         self._evdev_thread = threading.Thread(
             target=self._evdev_loop, name="mmx-evdev", daemon=True
         )
@@ -111,17 +118,25 @@ class Mmx200Backend:
             raw = open(self.LINK_PATH, encoding="utf-8").read().strip().split()
             linked = raw[0] in ("1", "true", "on")
             ts = float(raw[1]) if len(raw) > 1 else time.time()
+            via = raw[2] if len(raw) > 2 else "hid"
         except (OSError, ValueError, IndexError):
+            return
+        # The dongle only emits a link report on power toggle. A value from
+        # a previous session is not the current RF state.
+        if time.time() - ts > 120:
             return
         with self._hid_lock:
             self._hid_linked = linked
             self._hid_ts = ts
+            self._link_via = via
 
     def _persist_link(self, linked: bool) -> None:
         try:
             os.makedirs(os.path.dirname(self.LINK_PATH), exist_ok=True)
+            with self._hid_lock:
+                via = self._link_via or "hid"
             with open(self.LINK_PATH, "w", encoding="utf-8") as fh:
-                fh.write(f"{1 if linked else 0} {time.time():.3f}\n")
+                fh.write(f"{1 if linked else 0} {time.time():.3f} {via}\n")
         except OSError:
             pass
 
@@ -148,11 +163,12 @@ class Mmx200Backend:
         if len(data) >= 20 and b"MMX" not in data and data[1] != 0x6B:
             return
         # byte2: 0x00 = RF up, 0x01 = RF down (confirmed live)
-        self._set_linked(data[2] == 0, persist=True)
+        self._note_hid_link(data[2] == 0)
 
     def _hidraw_loop(self) -> None:
         """Listen for unsolicited HID link/button reports."""
         while not self._stop.is_set():
+            self._maybe_mic_probe()
             path = _find_hidraw(self.VID, self.PID)
             if not path:
                 self._clear_linked()
@@ -169,6 +185,7 @@ class Mmx200Backend:
                         break
                     ready, _, _ = select.select([fd], [], [], 1.0)
                     if not ready:
+                        self._maybe_mic_probe()
                         continue
                     try:
                         data = os.read(fd, 64)
@@ -181,7 +198,7 @@ class Mmx200Backend:
                     elif data[0] == self.REPORT_BUTTON:
                         # Buttons only arrive while RF-linked
                         self._last_button = time.time()
-                        self._set_linked(True, persist=True)
+                        self._note_hid_link(True)
             finally:
                 try:
                     os.close(fd)
@@ -193,6 +210,106 @@ class Mmx200Backend:
         """Cached link from last 0x55/0x07 report (or persisted)."""
         with self._hid_lock:
             return self._hid_linked
+
+    def link_detail(self, connected: bool) -> str:
+        with self._hid_lock:
+            via = self._link_via
+            known = self._hid_linked
+        if known is None:
+            return "HID: einmal aus/ein schalten"
+        if connected:
+            return "HID-Link" if via == "hid" else "Link (Mikrofon)"
+        return "HID: getrennt" if via == "hid" else "getrennt (Mikrofon still)"
+
+    def _note_hid_link(self, linked: bool) -> None:
+        with self._hid_lock:
+            self._hid_seen_live = True
+            self._link_via = "hid"
+        self._set_linked(linked, persist=True)
+
+    def _maybe_mic_probe(self) -> None:
+        """Steady-state link when no 0x55 edge has arrived this session.
+
+        The LL dongle emits the HID link report only on power toggle. Exact
+        digital silence on the USB mic means RF down; a noise floor means the
+        headset codec is up. HID edges remain authoritative once seen.
+        """
+        with self._hid_lock:
+            if self._hid_seen_live:
+                return
+        now = time.time()
+        if now - self._last_mic_probe < 8.0:
+            return
+        self._last_mic_probe = now
+        linked = self._mic_linked()
+        if linked is None:
+            self._last_mic_probe = now - 6.0
+            return
+        with self._hid_lock:
+            currently = self._hid_linked
+        if linked:
+            self._mic_quiet = 0
+        elif currently is True:
+            self._mic_quiet += 1
+            if self._mic_quiet < 3:
+                return
+        with self._hid_lock:
+            self._link_via = "mic"
+        self._set_linked(linked, persist=True)
+
+    def _mmx_source(self) -> Optional[str]:
+        try:
+            out = subprocess.check_output(
+                ["pactl", "list", "short", "sources"],
+                text=True,
+                timeout=2,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        for line in out.splitlines():
+            lower = line.lower()
+            if "beyerdynamic" not in lower or "monitor" in lower:
+                continue
+            parts = line.split()
+            if len(parts) >= 2:
+                return parts[1]
+        return None
+
+    def _mic_linked(self) -> Optional[bool]:
+        source = self._mmx_source()
+        if not source:
+            return None
+        try:
+            proc = subprocess.run(
+                [
+                    "parec",
+                    f"--device={source}",
+                    "--format=s16le",
+                    "--rate=48000",
+                    "--channels=1",
+                    "--latency-msec=40",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                timeout=0.6,
+            )
+            data = proc.stdout
+        except subprocess.TimeoutExpired as exc:
+            data = exc.stdout or b""
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if len(data) < 4800:
+            return None
+        peak = 0
+        limit = min(len(data) - 1, 24000)
+        for index in range(0, limit, 2):
+            sample = int.from_bytes(data[index : index + 2], "little", signed=True)
+            mag = sample if sample >= 0 else -sample
+            if mag > peak:
+                peak = mag
+            if peak >= 8:
+                return True
+        return peak >= 3
 
     def _evdev_loop(self) -> None:
         while not self._stop.is_set():
@@ -232,7 +349,7 @@ class Mmx200Backend:
                             off += 24
                             if typ != 0:
                                 self._last_button = time.time()
-                                self._set_linked(True, persist=True)
+                                self._note_hid_link(True)
                                 break
             finally:
                 for fd in fds:
@@ -346,14 +463,12 @@ class Mmx200Backend:
 
         hid = self.hid_link_status()
         if hid is True:
-            why = "HID-Link"
             connected = True
         elif hid is False:
-            why = "HID: getrennt"
             connected = False
         else:
             connected = False
-            why = "HID: einmal aus/ein schalten"
+        why = self.link_detail(connected)
 
         if last:
             age_h = (time.time() - last[1]) / 3600.0
