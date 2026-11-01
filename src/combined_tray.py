@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import signal
 import sys
 from pathlib import Path
 from typing import Optional
@@ -18,10 +19,14 @@ from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
+    QDialog,
+    QDialogButtonBox,
     QInputDialog,
+    QLabel,
     QMenu,
     QMessageBox,
     QSystemTrayIcon,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -163,11 +168,17 @@ class CombinedTrayApp(QWidget):
         act_refresh.triggered.connect(self.refresh)
         self.menu.addAction(act_refresh)
         self.menu.addSeparator()
-        act_quit = QAction("Quit")
-        act_quit.triggered.connect(QApplication.instance().quit)
+        act_quit = QAction("Beenden")
+        act_quit.triggered.connect(self._quit)
         self.menu.addAction(act_quit)
 
+        # Plasma on Wayland shows the tooltip for a tray click and rejects
+        # QMenu.popup() ("grabbing popup"). A normal dialog is a real window.
         self.tray.setContextMenu(self.menu)
+        self.tray.activated.connect(self._on_activated)
+        self._panel: Optional[QDialog] = None
+        self._panel_mmx: Optional[QLabel] = None
+        self._panel_pad: Optional[QLabel] = None
         self.tray.setToolTip("Device Battery (MMX + 8BitDo)")
         self.tray.setIcon(_battery_icon(None, False))
         self.tray.show()
@@ -177,6 +188,64 @@ class CombinedTrayApp(QWidget):
         self.timer.timeout.connect(self.refresh)
         self.timer.start()
         self.refresh()
+
+    def _on_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
+        if reason in (
+            QSystemTrayIcon.ActivationReason.Trigger,
+            QSystemTrayIcon.ActivationReason.Context,
+            QSystemTrayIcon.ActivationReason.MiddleClick,
+        ):
+            self._open_panel()
+
+    def _open_panel(self) -> None:
+        if self._panel is not None:
+            self._panel.raise_()
+            self._panel.activateWindow()
+            return
+        dlg = QDialog(None)
+        dlg.setWindowTitle("Akku-Tray")
+        dlg.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+        dlg.setMinimumWidth(420)
+        layout = QVBoxLayout(dlg)
+        self._panel_mmx = QLabel(self.status_mmx.text())
+        self._panel_pad = QLabel(self.status_pad.text())
+        self._panel_mmx.setWordWrap(True)
+        self._panel_pad.setWordWrap(True)
+        layout.addWidget(self._panel_mmx)
+        layout.addWidget(self._panel_pad)
+        buttons = QDialogButtonBox()
+        quit_btn = buttons.addButton(
+            "Tray beenden", QDialogButtonBox.ButtonRole.DestructiveRole
+        )
+        close_btn = buttons.addButton(
+            "Schließen", QDialogButtonBox.ButtonRole.RejectRole
+        )
+        quit_btn.clicked.connect(self._quit)
+        close_btn.clicked.connect(dlg.close)
+        layout.addWidget(buttons)
+        dlg.finished.connect(self._clear_panel)
+        self._panel = dlg
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+
+    def _clear_panel(self) -> None:
+        self._panel = None
+        self._panel_mmx = None
+        self._panel_pad = None
+
+    def _quit(self) -> None:
+        try:
+            self.timer.stop()
+        except Exception:
+            pass
+        try:
+            self.tray.hide()
+        except Exception:
+            pass
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
 
     def _ask(self, which: str) -> None:
         store = self.mmx_est if which == "mmx" else self.pad_est
@@ -267,6 +336,10 @@ class CombinedTrayApp(QWidget):
 
         self.status_mmx.setText(fmt("MMX 200", mmx_hw, mmx_pct, mmx_src))
         self.status_pad.setText(fmt("8BitDo 2C", pad_hw, pad_pct, pad_src))
+        if self._panel_mmx is not None:
+            self._panel_mmx.setText(self.status_mmx.text())
+        if self._panel_pad is not None:
+            self._panel_pad.setText(self.status_pad.text())
 
         candidates: list[int] = []
         if mmx_hw.connected and mmx_pct is not None:
@@ -318,8 +391,9 @@ class CombinedTrayApp(QWidget):
             )
 
 
-def run_combined_host() -> None:
+def run_combined_host(argv: Optional[list[str]] = None) -> None:
     """Run combined tray (call from MMX process when both installed)."""
+    argv = list(sys.argv[1:] if argv is None else argv)
     COMBINED_CONFIG.mkdir(parents=True, exist_ok=True)
     try:
         fd = os.open(LOCK_PATH, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
@@ -341,7 +415,7 @@ def run_combined_host() -> None:
     pad_mod = _load_module("pad2c_backend", PAD_SHARE / "backend.py")
 
     QApplication.setDesktopFileName("mmx200-battery-tray")
-    app = QApplication(sys.argv)
+    app = QApplication([sys.argv[0], *argv])
     app.setQuitOnLastWindowClosed(False)
     app.setApplicationName("Device Battery")
     app.setApplicationDisplayName("Device Battery")
@@ -353,5 +427,11 @@ def run_combined_host() -> None:
             pass
 
     app.aboutToQuit.connect(_cleanup)
-    _ = CombinedTrayApp(mmx_mod, pad_mod)
+    tray_app = CombinedTrayApp(mmx_mod, pad_mod)
+
+    def _on_term(*_args: object) -> None:
+        tray_app._quit()
+
+    signal.signal(signal.SIGTERM, _on_term)
+    signal.signal(signal.SIGINT, _on_term)
     sys.exit(app.exec())

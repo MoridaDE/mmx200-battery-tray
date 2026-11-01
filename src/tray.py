@@ -5,7 +5,10 @@ from __future__ import annotations
 
 import json
 import os
+import signal
+import subprocess
 import sys
+import time
 from typing import Optional
 
 from PyQt6.QtCore import QTimer, Qt
@@ -142,9 +145,10 @@ class TrayApp(QWidget):
         self.menu.addAction(act_refresh)
         self.menu.addSeparator()
         act_quit = QAction("Beenden")
-        act_quit.triggered.connect(QApplication.instance().quit)
+        act_quit.triggered.connect(self._quit)
         self.menu.addAction(act_quit)
 
+        # Plasma draws this menu over DBus. Local popup() fails on Wayland.
         self.tray.setContextMenu(self.menu)
         self.tray.setToolTip("MMX 200 Battery")
         self.tray.setIcon(_battery_icon(None, False))
@@ -155,6 +159,19 @@ class TrayApp(QWidget):
         self.timer.timeout.connect(self.refresh)
         self.timer.start()
         self.refresh()
+
+    def _quit(self) -> None:
+        try:
+            self.timer.stop()
+        except Exception:
+            pass
+        try:
+            self.tray.hide()
+        except Exception:
+            pass
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
 
     def _ask_pct(self) -> None:
         val, ok = QInputDialog.getInt(
@@ -241,11 +258,98 @@ class TrayApp(QWidget):
             self._warned = False
 
 
-def main() -> None:
+def stop_running(timeout_s: float = 3.0) -> int:
+    """Stop tray; ``killall battery`` does not work (process is python3)."""
+    subprocess.run(
+        ["systemctl", "--user", "stop", "mmx200-battery-tray.service"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    patterns = (
+        r"/mmx200-battery-tray/tray\.py",
+        r"/mmx200-battery-tray/combined_tray\.py",
+    )
+    pids: set[int] = set()
+    for lock in (
+        os.path.join(CONFIG_DIR, "tray.lock"),
+        os.path.expanduser("~/.config/device-battery-combined/tray.lock"),
+    ):
+        try:
+            pid = int(open(lock, encoding="utf-8").read().strip())
+            os.kill(pid, 0)
+            pids.add(pid)
+        except (OSError, ValueError):
+            pass
+    for pat in patterns:
+        try:
+            out = subprocess.check_output(["pgrep", "-f", pat], text=True)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            continue
+        for line in out.splitlines():
+            try:
+                pids.add(int(line.strip()))
+            except ValueError:
+                pass
+    for pid in sorted(pids):
+        if pid == os.getpid():
+            continue
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+    me = os.getpid()
+    alive: list[int] = []
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        alive = [p for p in pids if p != me and _pid_alive(p)]
+        if not alive:
+            break
+        time.sleep(0.1)
+    else:
+        for pid in alive:
+            if pid == me:
+                continue
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+    for lock in (
+        os.path.join(CONFIG_DIR, "tray.lock"),
+        os.path.expanduser("~/.config/device-battery-combined/tray.lock"),
+    ):
+        try:
+            os.remove(lock)
+        except OSError:
+            pass
+    print("mmx200-battery-tray beendet")
+    return 0
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def main(argv: Optional[list[str]] = None) -> None:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if any(a in ("-h", "--help", "help") for a in argv):
+        print(
+            "Usage: mmx200-battery-tray [--quit|--stop]\n"
+            "  --quit  Tray beenden (Menü: Beenden)\n"
+            "Hinweis: killall battery funktioniert nicht — Prozess heißt python3."
+        )
+        sys.exit(0)
+    if any(a in ("--quit", "--stop", "quit", "stop") for a in argv):
+        sys.exit(stop_running())
+
     from combined_tray import both_installed, run_combined_host  # noqa: E402
 
     if both_installed():
-        run_combined_host()
+        run_combined_host(argv)
         return
 
     lock = os.path.join(CONFIG_DIR, "tray.lock")
@@ -267,7 +371,7 @@ def main() -> None:
             os.close(fd)
 
     QApplication.setDesktopFileName("mmx200-battery-tray")
-    app = QApplication(sys.argv)
+    app = QApplication([sys.argv[0], *argv])
     app.setQuitOnLastWindowClosed(False)
     app.setApplicationName("MMX 200 Battery")
     app.setApplicationDisplayName("MMX 200 Battery")
@@ -279,7 +383,13 @@ def main() -> None:
             pass
 
     app.aboutToQuit.connect(_cleanup)
-    _ = TrayApp()
+    tray_app = TrayApp()
+
+    def _on_term(*_args: object) -> None:
+        tray_app._quit()
+
+    signal.signal(signal.SIGTERM, _on_term)
+    signal.signal(signal.SIGINT, _on_term)
     sys.exit(app.exec())
 
 

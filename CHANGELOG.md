@@ -1,8 +1,11 @@
 # Changelog
 
-## Unreleased
+## v1.2.0 — 2026-11-01
 
-### Fixed / Added
+### Fixed
+- **Tray beenden** opens in a normal window on tray click. Plasma only
+  shows the status tooltip for that click, and a popup menu is rejected on
+  Wayland. CLI: `mmx200-battery-tray --quit`.
 - Headset link no longer stays on a stale “disconnected” after restart.
   Until a live HID toggle arrives, the tray reads the USB-mic noise floor
   (silence = RF down).
