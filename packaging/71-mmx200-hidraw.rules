@@ -1,4 +1,8 @@
-# Beyerdynamic MMX 200 LL Adapter — userspace HID access for battery tray
+# Beyerdynamic MMX 200 — userspace HID access for the battery tray.
+# 002f is the LL dongle. 002d is the headset itself when the USB-C cable is on the PC.
 KERNEL=="hidraw*", ATTRS{idVendor}=="2e50", ATTRS{idProduct}=="002f", MODE="0660", TAG+="uaccess"
+KERNEL=="hidraw*", ATTRS{idVendor}=="2e50", ATTRS{idProduct}=="002d", MODE="0660", TAG+="uaccess"
 SUBSYSTEM=="input", ATTRS{idVendor}=="2e50", ATTRS{idProduct}=="002f", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="input", ATTRS{idVendor}=="2e50", ATTRS{idProduct}=="002d", MODE="0660", TAG+="uaccess"
 KERNEL=="event*", ATTRS{idVendor}=="2e50", ATTRS{idProduct}=="002f", MODE="0660", TAG+="uaccess"
+KERNEL=="event*", ATTRS{idVendor}=="2e50", ATTRS{idProduct}=="002d", MODE="0660", TAG+="uaccess"

@@ -71,7 +71,10 @@ class Mmx200Backend:
     """
 
     VID = 0x2E50
-    PID = 0x002F
+    PID = 0x002F  # LL dongle only. The USB-C cable enumerates the headset itself.
+    # Empty→full while the USB cable is on the PC. The manual does not publish
+    # a charge time; this only drives the estimate until a live % appears.
+    CHARGE_HOURS_DEFAULT = 2.5
     REPORT_LINK = 0x55
     REPORT_BUTTON = 0x07
     LINK_PATH = os.path.expanduser("~/.config/mmx200-battery/link")
@@ -112,6 +115,53 @@ class Mmx200Backend:
 
     def dongle_present(self) -> bool:
         return any(v == self.VID and p == self.PID for v, p, _ in _usb_ids())
+
+    def usb_headset(self) -> Optional[tuple[int, str]]:
+        """Headset on the USB-C cable, not the LL dongle.
+
+        Windows treats that cable as a separate device. On Linux it is any
+        other ``2e50`` USB id, or a sound card named MMX that is not the
+        LL Adapter.
+        """
+        for vid, pid, name in _usb_ids():
+            if vid == self.VID and pid != self.PID:
+                return pid, name or "MMX 200"
+        try:
+            cards = open("/proc/asound/cards", encoding="utf-8", errors="replace").read()
+        except OSError:
+            return None
+        for line in cards.splitlines():
+            low = line.lower()
+            if "mmx" not in low:
+                continue
+            if "adapter" in low or "ll adapter" in low:
+                continue
+            return 0, "MMX 200"
+        return None
+
+    def _usb_capacity(self, pid: int) -> Optional[int]:
+        """Live % if the USB headset exposes a kernel power supply."""
+        needle = f"{self.VID:04X}"
+        pid_s = f"{pid:04X}" if pid else ""
+        for root in glob.glob("/sys/class/power_supply/*"):
+            real = os.path.realpath(root).upper()
+            blob = real
+            uevent = os.path.join(root, "device", "uevent")
+            try:
+                blob += open(uevent, encoding="utf-8", errors="replace").read().upper()
+            except OSError:
+                pass
+            if needle not in blob or "002F" in blob:
+                continue
+            if pid_s and pid_s not in blob and needle in real:
+                continue
+            try:
+                cap = int(open(os.path.join(root, "capacity"), encoding="utf-8").read().strip())
+            except (OSError, ValueError):
+                continue
+            if 0 <= cap <= 100:
+                return cap
+        return None
 
     def _load_link(self) -> None:
         try:
@@ -428,7 +478,28 @@ class Mmx200Backend:
     def read(self) -> DeviceSnapshot:
         bt = self.bluetooth_battery()
         dongle = self.dongle_present()
+        usb = self.usb_headset()
         last = self._load_last_bt()
+
+        if usb is not None:
+            pid, uname = usb
+            cap = self._usb_capacity(pid)
+            ident = f"USB {self.VID:04x}:{pid:04x}" if pid else "USB"
+            if cap is not None:
+                detail = f"{ident} · {uname} · battery {cap}%"
+                source = "usb"
+            else:
+                detail = f"{ident} · {uname} · charging (no live %)"
+                source = "none"
+            return DeviceSnapshot(
+                name="MMX 200",
+                dongle=dongle,
+                connected=True,
+                percentage=cap,
+                charging=True,
+                source=source,
+                detail=detail,
+            )
 
         if bt is not None:
             pct, bt_conn, detail = bt

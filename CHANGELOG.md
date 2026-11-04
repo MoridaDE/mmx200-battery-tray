@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- USB-C cable mode is the headset itself, `2e50:002d` (“MMX 200 wireless”),
+  not the LL dongle `002f`. While that device is present the tray shows
+  charging and the estimate counts up (~2.5 h empty→full) instead of draining.
+- udev `uaccess` for the cable device (`002d`) as well as the dongle.
+
+### Notes
+- No live battery % from the cable device on this headset. It exposes no
+  kernel `power_supply`, Bluetooth does not answer while the cable is
+  attached, and the vendor HID channel returns a status flag plus an empty
+  block, not a percentage. A kernel % is still shown if one appears.
+
 ## v1.2.0 — 2026-11-01
 
 ### Fixed

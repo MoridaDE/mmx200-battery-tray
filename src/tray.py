@@ -109,6 +109,7 @@ class TrayApp(QWidget):
         self.est = EstimateStore(
             os.path.join(CONFIG_DIR, "estimate"),
             MMX_FULL_HOURS,
+            charge_hours=Mmx200Backend.CHARGE_HOURS_DEFAULT,
             drain_hours_path=os.path.join(CONFIG_DIR, "drain_hours"),
             drain_bounds=(15.0, 70.0),
         )
@@ -214,17 +215,23 @@ class TrayApp(QWidget):
     def refresh(self) -> None:
         hw = self.mmx.read()
         self.est.sync_from_disk()
-        if hw.percentage is not None and hw.source == "hid":
+        if hw.percentage is not None and hw.source in ("hid", "usb"):
             self.est.set_percentage(hw.percentage)
-            pct, src = hw.percentage, "hid"
+            pct, src = hw.percentage, hw.source
+        elif hw.charging:
+            pct = self.est.tick(charging=True)
+            src = "estimate"
         else:
             pct = self.est.tick(draining=bool(hw.connected))
             src = "estimate"
 
-        if not hw.dongle:
+        if not hw.dongle and not hw.charging:
             text = "MMX 200: kein Dongle"
         else:
-            link = "verbunden" if hw.connected else "getrennt"
+            if hw.charging:
+                link = "lädt"
+            else:
+                link = "verbunden" if hw.connected else "getrennt"
             tag = "~" if src == "estimate" else ""
             if pct is None:
                 text = f"MMX 200: {link} · {hw.detail}"

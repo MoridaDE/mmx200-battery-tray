@@ -26,6 +26,11 @@ Bluetooth. Vollständig KI-generiert (Cursor Agent), Feedback durch Morida.
 - **Bluetooth GATT** (`org.bluez.Battery1`) for real battery %
 - Discharge estimate (~40 h default); **learns runtime** from BT sync pairs
   (connected drain time + `%` drop → `drain_hours`)
+- **USB-C cable:** the headset enumerates as `2e50:002d` (not the LL dongle).
+  That is treated as charging; the estimate counts up (~2.5 h empty→full)
+  instead of draining. This headset does not expose a live % on that device
+  (no kernel battery, Bluetooth stays unreachable, vendor HID has no
+  percentage). A kernel `power_supply` % is shown if one appears.
 - Calibrate via voice prompt / menu / BT (each sync also resets the estimate)
 - CLI: `mmx200-battery-status`
 - systemd user service + autostart `.desktop`

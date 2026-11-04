@@ -107,6 +107,7 @@ class CombinedTrayApp(QWidget):
         self.mmx_est = mmx_mod.EstimateStore(
             os.path.join(mmx_cfg, "estimate"),
             MMX_FULL_HOURS,
+            charge_hours=mmx_mod.Mmx200Backend.CHARGE_HOURS_DEFAULT,
             drain_hours_path=os.path.join(mmx_cfg, "drain_hours"),
             drain_bounds=(15.0, 70.0),
         )
@@ -288,9 +289,25 @@ class CombinedTrayApp(QWidget):
         self.mmx_est.sync_from_disk()
         self.pad_est.sync_from_disk()
 
-        if mmx_hw.percentage is not None and mmx_hw.source == "hid":
+        if mmx_hw.percentage is not None and mmx_hw.source in ("hid", "usb"):
             self.mmx_est.set_percentage(mmx_hw.percentage)
-            mmx_pct, mmx_src = mmx_hw.percentage, "hid"
+            mmx_pct, mmx_src = mmx_hw.percentage, mmx_hw.source
+        elif mmx_hw.charging:
+            mmx_pct = self.mmx_est.tick(charging=True)
+            mmx_src = "estimate"
+            ch = self.mmx_est.charge_hours or self.mmx_mod.Mmx200Backend.CHARGE_HOURS_DEFAULT
+            rem = max(0.0, 100.0 - mmx_pct)
+            eta = (rem / 100.0) * ch * 60.0
+            if mmx_pct < 100:
+                mmx_hw = self.mmx_mod.DeviceSnapshot(
+                    name=mmx_hw.name,
+                    dongle=mmx_hw.dongle,
+                    connected=mmx_hw.connected,
+                    percentage=mmx_hw.percentage,
+                    charging=True,
+                    source=mmx_hw.source,
+                    detail=f"{mmx_hw.detail} · ETA ~{eta:.0f} min",
+                )
         else:
             mmx_pct = self.mmx_est.tick(draining=bool(mmx_hw.connected))
             mmx_src = "estimate"
@@ -325,9 +342,9 @@ class CombinedTrayApp(QWidget):
         def fmt(name: str, hw, pct: Optional[int], src: str) -> str:
             if not hw.dongle and not hw.connected:
                 return f"{name}: offline · {hw.detail}"
-            if not hw.dongle:
+            if not hw.dongle and not hw.charging:
                 return f"{name}: no dongle"
-            link = "connected" if hw.connected else "disconnected"
+            link = "charging" if hw.charging else ("connected" if hw.connected else "disconnected")
             tag = "~" if src == "estimate" else ""
             charge = " ⚡" if hw.charging else ""
             if pct is None:
