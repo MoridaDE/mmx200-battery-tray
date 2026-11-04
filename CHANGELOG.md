@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.3.0 — 2026-11-04
 
 ### Added
 - USB-C cable mode is the headset itself, `2e50:002d` (“MMX 200 wireless”),
