@@ -94,6 +94,7 @@ class Mmx200Backend:
         self._link_via = ""
         self._last_mic_probe = 0.0
         self._mic_quiet = 0
+        self._mic_settled = False
         self._hid_lock = threading.Lock()
         self._stop = threading.Event()
         self._watch = watch
@@ -285,10 +286,13 @@ class Mmx200Backend:
 
         The LL dongle emits the HID link report only on power toggle. Exact
         digital silence on the USB mic means RF down; a noise floor means the
-        headset codec is up. HID edges remain authoritative once seen.
+        headset codec is up. Opening that source is what the desktop shows as
+        the microphone in use, so this runs only until the session has a
+        decision: one noisy reading, or three quiet ones. Later on/off comes
+        from HID and does not open the mic again.
         """
         with self._hid_lock:
-            if self._hid_seen_live:
+            if self._hid_seen_live or self._mic_settled:
                 return
         now = time.time()
         if now - self._last_mic_probe < 8.0:
@@ -298,16 +302,15 @@ class Mmx200Backend:
         if linked is None:
             self._last_mic_probe = now - 6.0
             return
-        with self._hid_lock:
-            currently = self._hid_linked
         if linked:
             self._mic_quiet = 0
-        elif currently is True:
+        else:
             self._mic_quiet += 1
             if self._mic_quiet < 3:
                 return
         with self._hid_lock:
             self._link_via = "mic"
+            self._mic_settled = True
         self._set_linked(linked, persist=True)
 
     def _mmx_source(self) -> Optional[str]:
