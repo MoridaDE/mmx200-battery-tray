@@ -28,9 +28,9 @@ Bluetooth. Vollständig KI-generiert (Cursor Agent), Feedback durch Morida.
   (connected drain time + `%` drop → `drain_hours`)
 - **USB-C cable:** the headset enumerates as `2e50:002d` (not the LL dongle).
   That is treated as charging; the estimate counts up (~2.5 h empty→full)
-  instead of draining. This headset does not expose a live % on that device
-  (no kernel battery, Bluetooth stays unreachable, vendor HID has no
-  percentage). A kernel `power_supply` % is shown if one appears.
+  instead of draining. The cable device has no percentage of its own.
+  Bluetooth GATT still works in that mode and, when connected, replaces the
+  estimate. A kernel `power_supply` % is shown if one appears.
 - Calibrate via voice prompt / menu / BT (each sync also resets the estimate)
 - CLI: `mmx200-battery-status`
 - systemd user service + autostart `.desktop`

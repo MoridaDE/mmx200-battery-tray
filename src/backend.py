@@ -96,6 +96,9 @@ class Mmx200Backend:
         self._mic_quiet = 0
         self._hid_lock = threading.Lock()
         self._stop = threading.Event()
+        self._watch = watch
+        self._bt_connect_next = 0.0
+        self._bt_connect_lock = threading.Lock()
         self._load_link()
         if not watch:
             return
@@ -475,6 +478,48 @@ class Mmx200Backend:
             pass
         return None
 
+    def _request_bt_connect(self) -> None:
+        """Ask BlueZ to connect while the USB cable is attached.
+
+        The GATT battery is readable in that mode. Connect can block, so it
+        runs off the tray timer and is not retried more than once a minute.
+        """
+        if not self._watch:
+            return
+        now = time.time()
+        with self._bt_connect_lock:
+            if now < self._bt_connect_next:
+                return
+            self._bt_connect_next = now + 60.0
+        threading.Thread(
+            target=self._connect_bt_blocking, name="mmx-bt-connect", daemon=True
+        ).start()
+
+    def _connect_bt_blocking(self) -> None:
+        try:
+            import dbus
+
+            bus = dbus.SystemBus()
+            mgr = dbus.Interface(
+                bus.get_object("org.bluez", "/"),
+                "org.freedesktop.DBus.ObjectManager",
+            )
+            for path, ifaces in mgr.GetManagedObjects().items():
+                dev = ifaces.get("org.bluez.Device1")
+                if not dev:
+                    continue
+                blob = f"{dev.get('Name', '')} {dev.get('Alias', '')}".lower()
+                if not any(k in blob for k in ("beyer", "mmx 200", "mmx200")):
+                    continue
+                if bool(dev.get("Connected", False)):
+                    return
+                dbus.Interface(
+                    bus.get_object("org.bluez", path), "org.bluez.Device1"
+                ).Connect()
+                return
+        except Exception:
+            pass
+
     def read(self) -> DeviceSnapshot:
         bt = self.bluetooth_battery()
         dongle = self.dongle_present()
@@ -485,17 +530,26 @@ class Mmx200Backend:
             pid, uname = usb
             cap = self._usb_capacity(pid)
             ident = f"USB {self.VID:04x}:{pid:04x}" if pid else "USB"
+            bt_pct = bt[0] if bt is not None and bt[1] else None
+            if cap is None and bt_pct is None:
+                self._request_bt_connect()
             if cap is not None:
                 detail = f"{ident} · {uname} · battery {cap}%"
                 source = "usb"
+                percentage = cap
+            elif bt_pct is not None:
+                detail = f"{ident} · {uname} · Bluetooth GATT {bt_pct}%"
+                source = "hid"
+                percentage = bt_pct
             else:
                 detail = f"{ident} · {uname} · charging (no live %)"
                 source = "none"
+                percentage = None
             return DeviceSnapshot(
                 name="MMX 200",
                 dongle=dongle,
                 connected=True,
-                percentage=cap,
+                percentage=percentage,
                 charging=True,
                 source=source,
                 detail=detail,

@@ -9,10 +9,10 @@
 - udev `uaccess` for the cable device (`002d`) as well as the dongle.
 
 ### Notes
-- No live battery % from the cable device on this headset. It exposes no
-  kernel `power_supply`, Bluetooth does not answer while the cable is
-  attached, and the vendor HID channel returns a status flag plus an empty
-  block, not a percentage. A kernel % is still shown if one appears.
+- The cable device itself has no kernel `power_supply` and its vendor HID
+  channel has no percentage. Bluetooth still answers with the cable
+  attached: a connected GATT reading is shown as the live % while charging.
+  Otherwise the estimate counts up.
 
 ## v1.2.0 — 2026-11-01
 

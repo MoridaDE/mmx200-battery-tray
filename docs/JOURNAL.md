@@ -34,7 +34,7 @@ Dongle address e.g. `3:003`. Interrupt IN:
 ## Known limits
 
 - No dongle battery %
-- USB-C cable (`2e50:002d`) is detected as charging. No live % there either: no `power_supply`, Bluetooth page times out while the cable is attached, vendor output `0x3d` / opcode `0x0a` is an empty 60-byte block and opcode `0x0b` is a single flag (`0x01`), not a percentage.
+- USB-C cable (`2e50:002d`) is detected as charging. That USB device has no `power_supply` percentage. Vendor output `0x3d` opcode `0x0a` is an empty 60-byte block and opcode `0x0b` is a single flag (`0x01`), not a percentage. Bluetooth GATT does stay available with the cable attached and is the live % while charging.
 - HID link reports arrive only on power toggle. Until one arrives, the tray uses USB-mic silence (exact zeros = RF down) so a restart does not keep a stale “disconnected”.
 - Estimate drifts between BT syncs; re-calibrate via BT or voice announcement
 - Runtime learning needs meaningful discharge between syncs (≥3 % / ≥~20 min connected)
